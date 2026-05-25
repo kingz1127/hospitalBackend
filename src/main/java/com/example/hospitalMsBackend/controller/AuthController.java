@@ -8,7 +8,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -16,7 +15,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/auth")
 @RequiredArgsConstructor
-@Tag(name = "Auth controller", description = "Authentication for both Staff and Patients")
+@Tag(name = "Auth controller", description = "Login, Password Recovery, and Patient OTP access")
 public class AuthController {
 
     private final AuthService authService;
@@ -29,26 +28,21 @@ public class AuthController {
         return ResponseEntity.ok(authService.login(request));
     }
 
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
-    @PostMapping("/signup")
-    @Operation(summary = "Register new staff (Super Admin Only)")
-    public ResponseEntity<AuthResponse> signup(@RequestBody SignupRequest request) throws BusinessException {
-        return ResponseEntity.ok(authService.registerStaff(request));
-    }
-
     @PostMapping("/forgot-password")
-    @Operation(summary = "Staff forgot password - sends email")
+    @Operation(summary = "Staff forgot password - sends recovery link via Brevo")
     public ResponseEntity<?> forgotPassword(@RequestBody ForgotPasswordRequest request) throws BusinessException {
         authService.forgotPassword(request.getEmail());
         return ResponseEntity.ok(Map.of("message", "Password reset email sent"));
     }
 
     @PostMapping("/reset-password")
-    @Operation(summary = "Staff reset password using email token")
+    @Operation(summary = "Staff reset password using the token received in email")
     public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) throws BusinessException {
         authService.resetPassword(request.getToken(), request.getNewPassword());
         return ResponseEntity.ok(Map.of("message", "Password reset successful"));
     }
+
+    // --- PATIENT AUTH (OTP Flow) ---
 
     @PostMapping("/patient/request-otp")
     @Operation(summary = "Patient requests OTP via email to log in")

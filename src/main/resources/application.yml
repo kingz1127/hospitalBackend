@@ -45,6 +45,7 @@ spring:
     port: 2525 # Changed from 587 to 2525
     username: ${MAIL_USERNAME}
     password: ${MAIL_PASSWORD}
+    from: ${MAIL_FROM}
 
     properties:
       mail:
@@ -53,7 +54,7 @@ spring:
           starttls:
             enable: true
 
-      from: ${MAIL_FROM}
+
 
   jpa:
     hibernate:

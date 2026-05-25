@@ -24,17 +24,22 @@ public class UserService {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
+        // 1. Handle Text Fields (Partial Update)
         if (request.getFullName() != null) user.setFullName(request.getFullName());
         if (request.getEmail() != null) user.setEmail(request.getEmail().toLowerCase());
         if (request.getPhone() != null) user.setPhone(request.getPhone());
         if (request.getAddress() != null) user.setAddress(request.getAddress());
-        if (request.getCity() != null) user.setCity(request.getCity());
-        if (request.getNationality() != null) user.setNationality(request.getNationality());
-        if (request.getGender() != null) user.setGender(Gender.valueOf(request.getGender().toUpperCase()));
-        if (request.getDateOfBirth() != null) user.setDateOfBirth(request.getDateOfBirth());
 
-        // Manual Base64 string update
-        if (request.getProfileImage() != null) user.setProfileImage(request.getProfileImage());
+        // 2. Handle Image File (The "Pick a File" logic)
+        if (request.getImageFile() != null && !request.getImageFile().isEmpty()) {
+            try {
+                byte[] bytes = request.getImageFile().getBytes();
+                String base64Image = Base64.getEncoder().encodeToString(bytes);
+                user.setProfileImage("data:" + request.getImageFile().getContentType() + ";base64," + base64Image);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to process image file");
+            }
+        }
 
         userRepository.save(user);
     }

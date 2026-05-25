@@ -1,19 +1,18 @@
 package com.example.hospitalMsBackend.model.dto.request;
 
+import com.example.hospitalMsBackend.model.enums.Gender;
+import com.example.hospitalMsBackend.model.enums.Role;
 import lombok.Data;
-import org.springframework.web.multipart.MultipartFile;
 import java.time.LocalDate;
 
 @Data
-public class UpdateProfileRequest {
+public class CreateStaffRequest {
+    private String username;
     private String fullName;
     private String email;
     private String phone;
-    private String address;
-    private String city;
-    private String state;
+    private Role role;
+    private Gender gender;
     private String nationality;
     private LocalDate dateOfBirth;
-    private String gender;
-    private MultipartFile imageFile;
 }

@@ -1,6 +1,7 @@
 package com.example.hospitalMsBackend.service;
 
 import com.example.hospitalMsBackend.exception.BusinessException;
+import com.example.hospitalMsBackend.model.dto.request.CreateStaffRequest;
 import com.example.hospitalMsBackend.model.dto.request.LoginRequest;
 import com.example.hospitalMsBackend.model.dto.request.SignupRequest;
 import com.example.hospitalMsBackend.model.dto.response.AuthResponse;
@@ -110,24 +111,49 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthResponse registerStaff(SignupRequest request) {
-        // Generate a random temporary password
-        String tempPass = UUID.randomUUID().toString().substring(0, 8);
+    public UserResponse registerStaff(CreateStaffRequest request) {
+        if (userRepository.existsByUsername(request.getUsername())) {
+            throw new RuntimeException("Username already exists");
+        }
 
+        // 1. Generate a secure random password
+        String generatedPassword = UUID.randomUUID().toString().substring(0, 8);
+
+        // 2. Build the User entity (UUID is generated automatically by Hibernate)
         User staff = User.builder()
                 .username(request.getUsername())
                 .fullName(request.getFullName())
-                .email(request.getEmail())
-                .password(passwordEncoder.encode(tempPass))
-                .role(Role.valueOf(request.getRole()))
-                .needsPasswordReset(true)
+                .email(request.getEmail().toLowerCase())
+                .password(passwordEncoder.encode(generatedPassword)) // Encode the random pass
+                .role(request.getRole())
+                .gender(request.getGender())
+                .phone(request.getPhone())
+                .nationality(request.getNationality())
+                .dateOfBirth(request.getDateOfBirth())
+                .needsPasswordReset(true) // Force them to reset later
                 .isActive(true)
                 .build();
 
-        userRepository.save(staff);
-        // You can send the tempPass via email, but it's better to
-        // tell them to use "Forgot Password" on their first visit.
-        return buildAuthResponse(staff, null, "Staff registered. They must reset password via email.");
+        User savedUser = userRepository.save(staff);
+
+        // 3. Send the generated password to their email via Brevo
+        emailService.sendOnboardingEmail(savedUser.getEmail(), savedUser.getUsername(), generatedPassword);
+
+        // 4. Return the UserResponse (NOT the entity, to hide password and internal fields)
+        return buildUserResponse(savedUser);
+    }
+
+    // Helper method to convert Entity to Response
+    private UserResponse buildUserResponse(User user) {
+        return UserResponse.builder()
+                .id(user.getId())
+                .username(user.getUsername())
+                .fullName(user.getFullName())
+                .email(user.getEmail())
+                .role(user.getRole().name())
+                .isActive(user.getIsActive())
+                .createdAt(user.getCreatedAt())
+                .build();
     }
 
 

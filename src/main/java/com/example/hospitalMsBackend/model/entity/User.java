@@ -37,9 +37,8 @@ public class User implements UserDetails {
     @Enumerated(EnumType.STRING)
     private Role role;
 
-    @Lob
     @Column(columnDefinition = "TEXT")
-    private String profileImage; // Base64 string stored here
+    private String profileImage;
 
     private String email;
     private String phone;

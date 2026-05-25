@@ -27,7 +27,7 @@ public class OpenApiConfig {
                                 .email("osunyingboadedeji1@gmail.com")))
                 .servers(List.of(
                         new Server()
-//                                .url("https://icmfold.onrender.com/api/v1")
+                                .url("https://hospitalbackend-2me1.onrender.com/api/v1")
                                 .description("Production Server"),
                         new Server()
                                 .url("http://localhost:8080/api/v1")

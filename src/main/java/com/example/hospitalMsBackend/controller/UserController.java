@@ -12,7 +12,6 @@ import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.web.PageableDefault;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -76,8 +75,10 @@ public class UserController {
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     @Operation(summary = "Super Admin deletes a staff member")
-    public void deleteUser(@PathVariable UUID id) {
+    public ResponseEntity<Map<String, String>> deleteUser(@PathVariable UUID id) {
         userRepository.deleteById(id);
+
+        return ResponseEntity.ok(Map.of("message", "User deleted successfully"));
     }
 
     // 5. UPDATE ROLE (SUPER_ADMIN ONLY)

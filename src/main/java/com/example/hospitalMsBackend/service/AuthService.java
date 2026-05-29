@@ -1,9 +1,7 @@
 package com.example.hospitalMsBackend.service;
 
 import com.example.hospitalMsBackend.exception.BusinessException;
-import com.example.hospitalMsBackend.model.dto.request.CreateStaffRequest;
-import com.example.hospitalMsBackend.model.dto.request.LoginRequest;
-import com.example.hospitalMsBackend.model.dto.request.SignupRequest;
+import com.example.hospitalMsBackend.model.dto.request.*;
 import com.example.hospitalMsBackend.model.dto.response.AuthResponse;
 import com.example.hospitalMsBackend.model.dto.response.UserResponse;
 import com.example.hospitalMsBackend.model.entity.Patient;
@@ -13,8 +11,6 @@ import com.example.hospitalMsBackend.model.enums.Role;
 import com.example.hospitalMsBackend.repository.PatientRepository;
 import com.example.hospitalMsBackend.repository.UserRepository;
 import com.example.hospitalMsBackend.security.JwtService;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,7 +24,7 @@ import java.time.LocalDateTime;
 import java.util.Random;
 import java.util.UUID;
 
-@Service
+@Service // This is the bean Spring is looking for
 @RequiredArgsConstructor
 @Slf4j
 public class AuthService {
@@ -37,65 +33,29 @@ public class AuthService {
     private final PatientRepository patientRepository;
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
-
     private final AuthenticationManager authenticationManager;
-
     private final EmailService emailService;
 
-    private final ObjectMapper objectMapper = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-
-    @Transactional
-    public AuthResponse signup(SignupRequest request) throws BusinessException {
-        String username = request.getUsername().toLowerCase().trim();
-        if (userRepository.existsByUsername(username))
-            throw new BusinessException("Username already exists");
-
-        User user = User.builder()
-                .username(username) // Ensure saved as lowercase
-                .fullName(request.getFullName())
-                .email(request.getEmail().toLowerCase().trim())
-                .password(passwordEncoder.encode(request.getPassword()))
-                .phone(request.getPhone())
-                .gender(Gender.valueOf(request.getGender().toUpperCase()))
-                .role(Role.valueOf(request.getRole().toUpperCase()))
-                .nationality(request.getNationality())
-                .needsPasswordReset(false)
-                .isActive(true)
-                .build();
-
-        User savedUser = userRepository.save(user);
-        String token = jwtService.generateToken(savedUser);
-        return buildAuthResponse(savedUser, token, "Signup successful");
-    }
-
     public AuthResponse login(LoginRequest request) throws BusinessException {
-        // 1. Normalize input
         String username = request.getUsername().toLowerCase().trim();
-
         try {
-            // 2. Authenticate via Spring Security
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(username, request.getPassword())
             );
         } catch (AuthenticationException e) {
-            log.error("Login failed for user {}: {}", username, e.getMessage());
             throw new BusinessException("Invalid Username or Password");
         }
 
-        // 3. Fetch user
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new BusinessException("User record not found after authentication"));
+        User user = userRepository.findByUsernameIgnoreCase(username)
+                .orElseThrow(() -> new BusinessException("User record not found"));
 
-        // 4. Generate Token
         String token = jwtService.generateToken(user);
         return buildAuthResponse(user, token, "Login Successful");
     }
 
-
     @Transactional
     public void forgotPassword(String email) throws BusinessException {
-        User user = userRepository.findByEmail(email)
+        User user = userRepository.findByEmailIgnoreCase(email.trim())
                 .orElseThrow(() -> new BusinessException("User not found"));
 
         String token = UUID.randomUUID().toString();
@@ -109,7 +69,7 @@ public class AuthService {
     @Transactional
     public void resetPassword(String token, String newPassword) throws BusinessException {
         User user = userRepository.findByResetToken(token)
-                .orElseThrow(() -> new BusinessException("Invalid reset token"));
+                .orElseThrow(() -> new BusinessException("Invalid or expired reset token"));
 
         if (user.getResetTokenExpiry().isBefore(LocalDateTime.now())) {
             throw new BusinessException("Token expired");
@@ -118,7 +78,7 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setResetToken(null);
         user.setResetTokenExpiry(null);
-        user.setNeedsPasswordReset(false); // User can now login normally
+        user.setNeedsPasswordReset(false);
         userRepository.save(user);
     }
 
@@ -127,17 +87,13 @@ public class AuthService {
         String username = request.getUsername().toLowerCase().trim();
         String email = request.getEmail().toLowerCase().trim();
 
-        // 1. Prevent duplicate Username
         if (userRepository.existsByUsernameIgnoreCase(username)) {
             throw new RuntimeException("Username '" + username + "' is already taken.");
         }
-
-        // 2. Prevent duplicate Email
         if (userRepository.existsByEmailIgnoreCase(email)) {
-            throw new RuntimeException("The email '" + email + "' is already registered to another staff member.");
+            throw new RuntimeException("Email '" + email + "' is already registered.");
         }
 
-        // 3. Generate password and build user
         String generatedPassword = UUID.randomUUID().toString().substring(0, 8);
 
         User staff = User.builder()
@@ -155,23 +111,68 @@ public class AuthService {
                 .build();
 
         User savedUser = userRepository.save(staff);
-
-        // 4. Send email
         emailService.sendOnboardingEmail(savedUser.getEmail(), savedUser.getUsername(), generatedPassword);
 
         return buildUserResponse(savedUser);
     }
 
+    @Transactional
+    public void requestPatientOtp(String tokenNumber, String email) throws BusinessException {
+        Patient patient = patientRepository.findByTokenNumber(tokenNumber)
+                .orElseThrow(() -> new BusinessException("Patient token not found"));
+
+        if (!patient.getEmail().equalsIgnoreCase(email.trim())) {
+            throw new BusinessException("Email does not match our records");
+        }
+
+        String otp = String.format("%06d", new Random().nextInt(999999));
+        patient.setOtp(otp);
+        patient.setOtpExpiry(LocalDateTime.now().plusMinutes(10));
+        patientRepository.save(patient);
+
+        emailService.sendOtpEmail(patient.getEmail(), otp);
+    }
+
+    public AuthResponse verifyPatientOtp(String tokenNumber, String otp) throws BusinessException {
+        Patient patient = patientRepository.findByTokenNumber(tokenNumber)
+                .orElseThrow(() -> new BusinessException("Invalid token"));
+
+        if (patient.getOtp() == null || !patient.getOtp().equals(otp) ||
+                patient.getOtpExpiry().isBefore(LocalDateTime.now())) {
+            throw new BusinessException("Invalid or expired OTP");
+        }
+
+        patient.setOtp(null);
+        patient.setOtpExpiry(null);
+        patientRepository.save(patient);
+
+        String token = jwtService.generatePatientToken(patient);
+        return AuthResponse.builder().token(token).message("Patient login successful").build();
+    }
+
+    @Transactional
+    public void forgotToken(String phone) throws BusinessException {
+        Patient patient = patientRepository.findByPhone(phone)
+                .orElseThrow(() -> new BusinessException("No patient found with this phone number."));
+
+        if (patient.getEmail() == null || patient.getEmail().isEmpty()) {
+            throw new BusinessException("No email associated with this account.");
+        }
+
+        emailService.sendPatientWelcomeEmail(patient.getEmail(), patient.getFirstName(), patient.getTokenNumber());
+    }
+
+    // --- HELPER BUILDERS ---
+
     private AuthResponse buildAuthResponse(User user, String token, String message) {
         return AuthResponse.builder()
                 .message(message)
                 .token(token)
-                .user(buildUserResponse(user)) // Use the same builder for consistency
+                .user(buildUserResponse(user))
                 .build();
     }
 
-    // Helper method to convert Entity to Response
-    private UserResponse buildUserResponse(User user) {
+    public UserResponse buildUserResponse(User user) {
         return UserResponse.builder()
                 .id(user.getId())
                 .username(user.getUsername())
@@ -191,46 +192,4 @@ public class AuthService {
                 .updatedAt(user.getUpdatedAt())
                 .build();
     }
-
-
-    @Transactional
-    public void requestPatientOtp(String tokenNumber, String email) throws BusinessException {
-        Patient patient = patientRepository.findByTokenNumber(tokenNumber)
-                .orElseThrow(() -> new BusinessException("Patient token not found"));
-
-        if (!patient.getEmail().equalsIgnoreCase(email)) {
-            throw new BusinessException("Email does not match our records");
-        }
-
-        String otp = String.format("%06d", new Random().nextInt(999999));
-        patient.setOtp(otp);
-        patient.setOtpExpiry(LocalDateTime.now().plusMinutes(10));
-        patientRepository.save(patient);
-
-        emailService.sendOtpEmail(patient.getEmail(), otp); // Send via Brevo
-    }
-
-    public AuthResponse verifyPatientOtp(String tokenNumber, String otp) throws BusinessException {
-        Patient patient = patientRepository.findByTokenNumber(tokenNumber)
-                .orElseThrow(() -> new BusinessException("Invalid token"));
-
-        if (patient.getOtp() == null || !patient.getOtp().equals(otp) ||
-                patient.getOtpExpiry().isBefore(LocalDateTime.now())) {
-            throw new BusinessException("Invalid or expired OTP");
-        }
-
-        // Clear OTP after use
-        patient.setOtp(null);
-        patient.setOtpExpiry(null);
-        patientRepository.save(patient);
-
-        // Generate JWT with ROLE_PATIENT
-        String token = jwtService.generatePatientToken(patient);
-
-        return AuthResponse.builder()
-                .token(token)
-                .message("Patient login successful")
-                .build();
-    }
-
 }

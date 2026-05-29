@@ -63,4 +63,19 @@ public class EmailService {
             log.error("Failed to send onboarding email: {}", e.getMessage());
         }
     }
+
+    public void sendPatientWelcomeEmail(String to, String firstName, String tokenNumber) {
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(senderEmail); // The senderEmail you defined with @Value
+            message.setTo(to);
+            message.setSubject("Welcome to HospitalMS - Your Patient ID");
+            message.setText("Hello " + firstName + ",\n\n" +
+                    "Your registration is complete. Your Unique Patient ID is: " + tokenNumber + "\n\n" +
+                    "Use this ID to log into the portal and track your medical history.");
+            mailSender.send(message);
+        } catch (Exception e) {
+            log.error("Failed to send welcome email: {}", e.getMessage());
+        }
+    }
 }

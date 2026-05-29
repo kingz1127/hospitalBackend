@@ -56,4 +56,11 @@ public class AuthController {
     public ResponseEntity<AuthResponse> verifyOtp(@RequestParam String tokenNumber, @RequestParam String otp) throws BusinessException {
         return ResponseEntity.ok(authService.verifyPatientOtp(tokenNumber, otp));
     }
+
+    @PostMapping("/patient/forgot-token")
+    @Operation(summary = "Patient retrieves lost Token ID via Phone Number")
+    public ResponseEntity<?> forgotToken(@RequestParam String phone) throws BusinessException {
+        authService.forgotToken(phone);
+        return ResponseEntity.ok(Map.of("message", "Your Token ID has been sent to your registered email address."));
+    }
 }

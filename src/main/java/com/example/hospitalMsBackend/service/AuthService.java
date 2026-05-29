@@ -125,16 +125,25 @@ public class AuthService {
     @Transactional
     public UserResponse registerStaff(CreateStaffRequest request) {
         String username = request.getUsername().toLowerCase().trim();
-        if (userRepository.existsByUsername(username)) {
-            throw new RuntimeException("Username already exists");
+        String email = request.getEmail().toLowerCase().trim();
+
+        // 1. Prevent duplicate Username
+        if (userRepository.existsByUsernameIgnoreCase(username)) {
+            throw new RuntimeException("Username '" + username + "' is already taken.");
         }
 
+        // 2. Prevent duplicate Email
+        if (userRepository.existsByEmailIgnoreCase(email)) {
+            throw new RuntimeException("The email '" + email + "' is already registered to another staff member.");
+        }
+
+        // 3. Generate password and build user
         String generatedPassword = UUID.randomUUID().toString().substring(0, 8);
 
         User staff = User.builder()
-                .username(username) // Standardized lowercase
+                .username(username)
                 .fullName(request.getFullName())
-                .email(request.getEmail().toLowerCase().trim())
+                .email(email)
                 .password(passwordEncoder.encode(generatedPassword))
                 .role(request.getRole())
                 .gender(request.getGender())
@@ -146,6 +155,8 @@ public class AuthService {
                 .build();
 
         User savedUser = userRepository.save(staff);
+
+        // 4. Send email
         emailService.sendOnboardingEmail(savedUser.getEmail(), savedUser.getUsername(), generatedPassword);
 
         return buildUserResponse(savedUser);

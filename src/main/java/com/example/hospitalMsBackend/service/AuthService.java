@@ -20,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -46,18 +47,21 @@ public class AuthService {
 
     @Transactional
     public AuthResponse signup(SignupRequest request) throws BusinessException {
-        if (userRepository.existsByUsername(request.getUsername()))
+        String username = request.getUsername().toLowerCase().trim();
+        if (userRepository.existsByUsername(username))
             throw new BusinessException("Username already exists");
 
-
         User user = User.builder()
+                .username(username) // Ensure saved as lowercase
                 .fullName(request.getFullName())
-                .email(request.getEmail().toLowerCase())
+                .email(request.getEmail().toLowerCase().trim())
                 .password(passwordEncoder.encode(request.getPassword()))
                 .phone(request.getPhone())
                 .gender(Gender.valueOf(request.getGender().toUpperCase()))
                 .role(Role.valueOf(request.getRole().toUpperCase()))
                 .nationality(request.getNationality())
+                .needsPasswordReset(false)
+                .isActive(true)
                 .build();
 
         User savedUser = userRepository.save(user);
@@ -66,16 +70,24 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequest request) throws BusinessException {
+        // 1. Normalize input
+        String username = request.getUsername().toLowerCase().trim();
+
         try {
+            // 2. Authenticate via Spring Security
             authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword())
+                    new UsernamePasswordAuthenticationToken(username, request.getPassword())
             );
-        } catch (Exception e) {
+        } catch (AuthenticationException e) {
+            log.error("Login failed for user {}: {}", username, e.getMessage());
             throw new BusinessException("Invalid Username or Password");
         }
 
-        User user = userRepository.findByUsername(request.getUsername().toLowerCase())
-                .orElseThrow(() -> new BusinessException("User not found"));
+        // 3. Fetch user
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new BusinessException("User record not found after authentication"));
+
+        // 4. Generate Token
         String token = jwtService.generateToken(user);
         return buildAuthResponse(user, token, "Login Successful");
     }
@@ -112,35 +124,39 @@ public class AuthService {
 
     @Transactional
     public UserResponse registerStaff(CreateStaffRequest request) {
-        if (userRepository.existsByUsername(request.getUsername())) {
+        String username = request.getUsername().toLowerCase().trim();
+        if (userRepository.existsByUsername(username)) {
             throw new RuntimeException("Username already exists");
         }
 
-        // 1. Generate a secure random password
         String generatedPassword = UUID.randomUUID().toString().substring(0, 8);
 
-        // 2. Build the User entity (UUID is generated automatically by Hibernate)
         User staff = User.builder()
-                .username(request.getUsername())
+                .username(username) // Standardized lowercase
                 .fullName(request.getFullName())
-                .email(request.getEmail().toLowerCase())
-                .password(passwordEncoder.encode(generatedPassword)) // Encode the random pass
+                .email(request.getEmail().toLowerCase().trim())
+                .password(passwordEncoder.encode(generatedPassword))
                 .role(request.getRole())
                 .gender(request.getGender())
                 .phone(request.getPhone())
                 .nationality(request.getNationality())
                 .dateOfBirth(request.getDateOfBirth())
-                .needsPasswordReset(true) // Force them to reset later
+                .needsPasswordReset(true)
                 .isActive(true)
                 .build();
 
         User savedUser = userRepository.save(staff);
-
-        // 3. Send the generated password to their email via Brevo
         emailService.sendOnboardingEmail(savedUser.getEmail(), savedUser.getUsername(), generatedPassword);
 
-        // 4. Return the UserResponse (NOT the entity, to hide password and internal fields)
         return buildUserResponse(savedUser);
+    }
+
+    private AuthResponse buildAuthResponse(User user, String token, String message) {
+        return AuthResponse.builder()
+                .message(message)
+                .token(token)
+                .user(buildUserResponse(user)) // Use the same builder for consistency
+                .build();
     }
 
     // Helper method to convert Entity to Response
@@ -150,9 +166,18 @@ public class AuthService {
                 .username(user.getUsername())
                 .fullName(user.getFullName())
                 .email(user.getEmail())
-                .role(user.getRole().name())
-                .isActive(user.getIsActive())
+                .phone(user.getPhone())
+                .role(user.getRole() != null ? user.getRole().name() : null)
+                .gender(user.getGender() != null ? user.getGender().name() : null)
+                .profileImage(user.getProfileImage())
+                .nationality(user.getNationality())
+                .address(user.getAddress())
+                .city(user.getCity())
+                .state(user.getState())
+                .isActive(user.getIsActive() != null ? user.getIsActive() : false)
+                .dateOfBirth(user.getDateOfBirth())
                 .createdAt(user.getCreatedAt())
+                .updatedAt(user.getUpdatedAt())
                 .build();
     }
 
@@ -197,28 +222,4 @@ public class AuthService {
                 .build();
     }
 
-    private AuthResponse buildAuthResponse(User user, String token, String message) {
-
-        UserResponse userDto = UserResponse.builder()
-                .id(user.getId())
-                .fullName(user.getFullName())
-                .email(user.getEmail())
-                .phone(user.getPhone())
-                .role(user.getRole().name())
-                .gender(user.getGender() != null ? user.getGender().name() : null)
-                .nationality(user.getNationality())
-                .address(user.getAddress())
-                .city(user.getCity())
-                .state(user.getState())
-                .dateOfBirth(user.getDateOfBirth())
-                .createdAt(user.getCreatedAt())
-                .updatedAt(user.getUpdatedAt())
-                .build();
-
-        return AuthResponse.builder()
-                .message(message)
-                .token(token)
-                .user(userDto)
-                .build();
-    }
 }
